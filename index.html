@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Locations Map</title>
+    <!-- Font Awesome for icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"
+    />
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+    />
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Oswald:wght@200;300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Register Service Worker for caching CDN assets -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker
+            .register("service-worker.js")
+            .then(function (registration) {
+              console.log(
+                "Service Worker registered with scope:",
+                registration.scope
+              );
+            })
+            .catch(function (err) {
+              console.log("Service Worker registration failed:", err);
+            });
+        });
+      }
+    </script>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  </head>
+  <body>
+    <!-- Sidebar for the locations list -->
+    <div id="locations-list" class="locations-list">
+      <h1 class="locations-title">Crime Categories</h1>
+    </div>
+
+    <!-- Map container -->
+    <div id="map"></div>
+
+    <!-- Options container (if needed) -->
+    <div id="options-container" class="hidden">
+      <button id="export-button" class="popup-button">Export</button>
+      <button id="import-button" class="popup-button">Import</button>
+      <input
+        id="import-file"
+        class="popup-input"
+        type="file"
+        accept="application/json"
+      />
+      <button id="toggle-set-locations-button" class="popup-button">
+        Crime Locations
+      </button>
+      <button id="create-marker-button" class="popup-button">
+        Create Marker
+      </button>
+      <button id="close-options-button" class="popup-button">Close</button>
+    </div>
+
+    <!-- Modal container for enlarged images -->
+    <div id="image-modal" class="modal">
+      <span class="modal-close">&times;</span>
+      <img class="modal-content" id="modal-image" alt="Enlarged image" />
+    </div>
+
+    <!-- Bench Recipes Modal (if needed) -->
+    <div id="benchModal" class="modal">
+      <div class="modal-content bench-modal-content">
+        <span id="benchModalClose" class="modal-close">&times;</span>
+        <div id="benchModalContent"></div>
+      </div>
+    </div>
+
+    <!-- Side Popup for location details -->
+    <div id="side-popup" class="side-popup">
+      <span id="side-popup-close" class="side-popup-close">&times;</span>
+      <div id="side-popup-content"></div>
+    </div>
+
+    <!-- Loading indicator for prefetching images -->
+    <div id="loading-indicator" class="loading-indicator"></div>
+
+
+    <!-- Include the main JS file -->
+    <script src="map.js"></script>
+  </body>
+</html>
