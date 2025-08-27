@@ -69,7 +69,8 @@
       "color": "#e0daba",
       "locations": [
         {"id":1728148874962,"lat":"756.023438","lng":"411.070313","name":"Hatchet Dude","img":"https://i.ibb.co/cX92ZV1/image.png"},
-        {"id":1728149302309,"lat":"669.250000","lng":"281.000000","name":"Pool Cue Guy","img":"https://i.ibb.co/3r2ThBP/image.png"}
+        {"id":1728149302309,"lat":"669.250000","lng":"281.000000","name":"Pool Cue Guy","img":"https://i.ibb.co/3r2ThBP/image.png"},
+        {"id":1751712275629,"lat":"181.125000","lng":"827.125000","name":"Handmade Hatchet","img":"https://images.guns.lol/fXPTr.png"}
       ]
     },
     "Jailbreak": {
@@ -130,8 +131,20 @@
     "Opium Stuff": {
       "color": "#574b27",
       "locations": [
-        {"id":1728154472558,"lat":"136.656250","lng":"885.250000","name":"Opium Bench","img":"https://i.ibb.co/d0BYRBx/image.png"},
+        {"id":1754492515180,"lat":"194.390625","lng":"408.265625","name":"Opium Bench","img":"https://images.guns.lol/H66yS.png"},
         {"id":1747081627217,"lat":"847.625000","lng":"630.062500","name":"Poppy Field","img":"https://images.guns.lol/xSmzC.jpg"}
+      ]
+    },
+      "Meth Stuff": {
+      "color": "#0074a8",
+      "locations": [
+        {"id":1754389448497,"lat":"757.750000","lng":"413.812500","name":"Sodium Benzonate","img":"https://images.guns.lol/iPebG.jpg"},
+        {"id":1754389999077,"lat":"758.031250","lng":"410.718750","name":"Sodium Benzonate","img":"https://images.guns.lol/xqkUn.jpg"},
+        {"id":1754390035213,"lat":"754.640625","lng":"411.062500","name":"Sodium Benzonate","img":"https://images.guns.lol/aoDIP.jpg"},
+        {"id":1754390095824,"lat":"756.953125","lng":"413.976563","name":"Toluene","img":"https://images.guns.lol/PTYFc.jpg"},
+        {"id":1754390123045,"lat":"755.382813","lng":"411.609375","name":"Toluene","img":"https://images.guns.lol/dto7V.jpg"},
+        {"id":1754390150106,"lat":"756.210938","lng":"413.492188","name":"Toluene","img":"https://images.guns.lol/Azllz.jpg"},
+        {"id":1754390191972,"lat":"755.273438","lng":"413.210938","name":"Propylene Glycol","img":"https://images.guns.lol/kUjVP.jpg"}
       ]
     }
   }

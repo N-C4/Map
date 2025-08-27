@@ -1,4 +1,4 @@
-/* map.js */
+/* map.js — lean, no preloading, no crafting, no prodigy */
 
 // Initialize the map with the canvas renderer for better performance
 const map = L.map("map", {
@@ -8,8 +8,6 @@ const map = L.map("map", {
   preferCanvas: true,
 });
 
-const cdnImageCache = {};
-
 // Set map bounds and add the base image overlay
 const bounds = [
   [0, 0],
@@ -18,11 +16,54 @@ const bounds = [
 L.imageOverlay("Gta5MapCayo.png", bounds).addTo(map);
 map.fitBounds(bounds);
 
-// Global variables
+// Global state
 let categories = {};
-let dataSource = "categories.json"; // default (will be set via modal)
+let dataSource = "categories.json"; // default (set on DOMContentLoaded)
 const markersGroup = L.layerGroup().addTo(map);
 let currentHighlightedMarker = null; // used for marker highlighting
+
+// Simple in-memory image memo cache (Promise-based)
+const imageLoadCache = new Map();
+
+/**
+ * Load an image once and memoize the Promise so reuses are instant.
+ * Does NOT attach to DOM directly; it only ensures it's cached by the browser.
+ */
+function loadImage(url) {
+  if (imageLoadCache.has(url)) return imageLoadCache.get(url);
+  const p = new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(url);
+    img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+    img.src = url;
+  });
+  imageLoadCache.set(url, p);
+  return p;
+}
+
+/**
+ * Optionally warm a small set of images in the background (no blocking).
+ * Keeps things snappy without preloading everything.
+ */
+function warmCache(urls, limit = 8) {
+  const toWarm = urls.slice(0, limit).filter((u) => !imageLoadCache.has(u));
+  if (toWarm.length === 0) return;
+
+  const run = () => {
+    // Load sequentially but quietly
+    (async () => {
+      for (const url of toWarm) {
+        try { await loadImage(url); } catch {}
+      }
+    })();
+  };
+
+  if ("requestIdleCallback" in window) {
+    requestIdleCallback(run, { timeout: 2000 });
+  } else {
+    setTimeout(run, 0);
+  }
+}
 
 /**
  * Highlights the given marker (and unhighlights any previous marker)
@@ -30,9 +71,7 @@ let currentHighlightedMarker = null; // used for marker highlighting
 function highlightMarker(marker) {
   if (currentHighlightedMarker && currentHighlightedMarker !== marker) {
     const prevEl = currentHighlightedMarker.getElement();
-    if (prevEl) {
-      prevEl.classList.remove("highlighted");
-    }
+    if (prevEl) prevEl.classList.remove("highlighted");
   }
   currentHighlightedMarker = marker;
   const el = marker.getElement();
@@ -42,131 +81,17 @@ function highlightMarker(marker) {
     el.classList.add("highlighted");
     el.addEventListener(
       "animationend",
-      () => {
-        el.classList.remove("highlighted");
-      },
+      () => el.classList.remove("highlighted"),
       { once: true }
     );
   }
 }
 
 /**
- * Returns the total number of images (locations) in the data.
+ * Loads data from the given JSON file and builds the sidebar and markers.
+ * No global image prefetching.
  */
-const getTotalImageCount = (categoriesData) => {
-  let count = 0;
-  for (let category in categoriesData) {
-    count += categoriesData[category].locations.length;
-  }
-  return count;
-};
-
-/**
- * Updates the loading indicator's inner HTML with progress info.
- */
-const updateLoadingIndicator = (loaded, total) => {
-  const loadingIndicator = document.getElementById("loading-indicator");
-  loadingIndicator.innerHTML = `
-    <div>
-      <i class="fas fa-spinner fa-spin"></i>
-      <p style="margin-top:10px; font-size: 20px;">
-          ${loaded} out of ${total} images loaded
-      </p>
-    </div>
-  `;
-};
-
-/**
- * Prefetches all images from the categories data.
- */
-const prefetchImages = (categoriesData) =>
-  new Promise((resolve, reject) => {
-    const totalImages = getTotalImageCount(categoriesData);
-    let loadedCount = 0;
-    if (totalImages === 0) {
-      resolve();
-      return;
-    }
-    for (let category in categoriesData) {
-      categoriesData[category].locations.forEach((location) => {
-        const img = new Image();
-        img.onload = img.onerror = () => {
-          loadedCount++;
-          updateLoadingIndicator(loadedCount, totalImages);
-          if (loadedCount === totalImages) {
-            resolve();
-          }
-        };
-        img.src = location.img;
-      });
-    }
-  });
-
-/**
- * Load and cache a CDN image.
- */
-const loadCachedCDNImage = (url) =>
-  new Promise((resolve, reject) => {
-    if (cdnImageCache[url]) {
-      resolve(cdnImageCache[url]);
-    } else {
-      const img = new Image();
-      img.onload = () => {
-        cdnImageCache[url] = url;
-        resolve(url);
-      };
-      img.onerror = () => {
-        reject(new Error(`Failed to load image: ${url}`));
-      };
-      img.src = url;
-    }
-  });
-
-/**
- * Prefetch CDN images used in recipe ingredients.
- */
-const prefetchCDNImages = (categoriesData) =>
-  new Promise((resolve) => {
-    const cdnUrls = new Set();
-    Object.keys(categoriesData).forEach((category) => {
-      categoriesData[category].locations.forEach((location) => {
-        if (location.bench && Array.isArray(location.recipes)) {
-          location.recipes.forEach((recipe) => {
-            recipe.ingredients.forEach((ingredient) => {
-              const url = `https://cdn.prodigyrp.net/inventory-images/${ingredient.id}.webp`;
-              cdnUrls.add(url);
-            });
-          });
-        }
-      });
-    });
-    const urls = Array.from(cdnUrls);
-    if (urls.length === 0) {
-      resolve();
-      return;
-    }
-    let loadedCount = 0;
-    urls.forEach((url) => {
-      loadCachedCDNImage(url)
-        .then(() => {
-          loadedCount++;
-          if (loadedCount === urls.length) {
-            resolve();
-          }
-        })
-        .catch(() => {
-          loadedCount++;
-          if (loadedCount === urls.length) {
-            resolve();
-          }
-        });
-    });
-  });
-
-/**
- * Loads data from the given JSON file, prefetches images, and builds the sidebar and markers.
- */
-const loadData = (fileName) => {
+function loadData(fileName) {
   markersGroup.clearLayers();
   const locationsListContainer = document.getElementById("locations-list");
   locationsListContainer.innerHTML =
@@ -179,6 +104,8 @@ const loadData = (fileName) => {
     })
     .then((data) => {
       categories = data;
+
+      // Build a simple colored pin icon per category
       const categoryIcons = {};
       for (const category in categories) {
         const color = categories[category].color;
@@ -189,25 +116,18 @@ const loadData = (fileName) => {
           popupAnchor: [0, -10],
         });
       }
-      const loadingIndicator = document.getElementById("loading-indicator");
-      loadingIndicator.style.display = "block";
-      updateLoadingIndicator(0, getTotalImageCount(categories));
-      prefetchImages(categories).then(() => {
-        prefetchCDNImages(categories).then(() => {
-          loadingIndicator.style.display = "none";
-          loadCategories(categoryIcons);
-        });
-      });
+
+      loadCategories(categoryIcons);
     })
     .catch((error) => {
       console.error("Error loading JSON file:", error);
     });
-};
+}
 
 /**
  * Builds the sidebar and adds markers for each category.
  */
-const loadCategories = (categoryIcons) => {
+function loadCategories(categoryIcons) {
   const locationsListContainer = document.getElementById("locations-list");
   const fragment = document.createDocumentFragment();
 
@@ -235,6 +155,9 @@ const loadCategories = (categoryIcons) => {
     const panel = document.createElement("div");
     panel.className = "panel";
 
+    // Collect image URLs so we can optionally warm a few on expand
+    const categoryImageUrls = [];
+
     categoryData.locations.forEach((location) => {
       const icon = categoryIcons[category];
       const marker = L.marker(
@@ -242,6 +165,9 @@ const loadCategories = (categoryIcons) => {
         { icon: icon, title: location.name }
       ).addTo(markersGroup);
       location.marker = marker;
+
+      // Keep track for warmCache later
+      if (location.img) categoryImageUrls.push(location.img);
 
       marker.on("click", function () {
         highlightMarker(this);
@@ -267,24 +193,31 @@ const loadCategories = (categoryIcons) => {
       panel.appendChild(listItem);
     });
 
-    fragment.appendChild(accordionButton);
-    fragment.appendChild(panel);
-
+    // Expand/collapse
     accordionButton.addEventListener("click", function () {
       this.classList.toggle("active");
-      const panel = this.nextElementSibling;
-      panel.style.display =
-        panel.style.display === "block" ? "none" : "block";
+      const p = this.nextElementSibling;
+      const willOpen = p.style.display !== "block";
+      p.style.display = willOpen ? "block" : "none";
+
+      // If opening, gently warm a small subset of this category's images
+      if (willOpen && categoryImageUrls.length) {
+        warmCache(categoryImageUrls, 6);
+      }
     });
+
+    fragment.appendChild(accordionButton);
+    fragment.appendChild(panel);
   }
 
   locationsListContainer.appendChild(fragment);
-};
+}
 
 /**
  * Displays a side popup with location details.
+ * Image is lazy-loaded on demand and cached.
  */
-const showSidePopup = (location) => {
+function showSidePopup(location) {
   // Use either Info or info field
   const infoText =
     location.Info || location.info
@@ -292,131 +225,48 @@ const showSidePopup = (location) => {
           location.Info || location.info
         }</p>`
       : "";
-  let content = `
+
+  // Skeleton placeholder for image while loading
+  const content = `
     <h1>${location.name}</h1>
     ${infoText}
-    <img
-      src="${location.img}"
-      alt="${location.name}"
-      title="${location.name}"
-      style="width:100%; height:auto; margin-bottom:10px; cursor:pointer;"
-    />
+    <div id="side-img-wrap" style="width:100%; aspect-ratio: 16 / 9; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; margin-bottom:10px;">
+      <span id="side-img-loading" style="font-size:14px; opacity:0.8;">Loading image…</span>
+      <img id="side-img" alt="${location.name}" title="${location.name}" style="display:none; width:100%; height:100%; object-fit:contain; cursor:pointer;" loading="lazy" />
+    </div>
   `;
-
-  if (location.bench === true && Array.isArray(location.recipes)) {
-    content += `<h3>Recipes:</h3>
-                <div id="recipe-menu" style="display: flex; flex-wrap: wrap; margin-left:10px;">`;
-    location.recipes.forEach((recipe) => {
-      const recipeImageUrl = `https://cdn.prodigyrp.net/inventory-images/${recipe.id}.webp`;
-      content += `
-        <img
-          class="recipe-image"
-          src="${recipeImageUrl}"
-          alt="${recipe.display}"
-          title="${recipe.display}"
-          data-recipe-id="${recipe.id}"
-          style="width:50px; height:50px; cursor:pointer; margin:2px; border:1px solid rgb(134, 214, 36); border-radius:4px;"
-        />
-      `;
-    });
-    content += `</div>
-                <div id="recipe-details"></div>`;
-  }
 
   const popupContentEl = document.getElementById("side-popup-content");
   popupContentEl.innerHTML = content;
   document.getElementById("side-popup").style.display = "block";
 
-  const sideImg = popupContentEl.querySelector("img");
-  if (sideImg) {
-    sideImg.addEventListener("click", function () {
-      openModal(this.src);
-    });
+  const imgEl = popupContentEl.querySelector("#side-img");
+  const loadingEl = popupContentEl.querySelector("#side-img-loading");
+
+  if (location.img) {
+    // Load only now, then show
+    loadImage(location.img)
+      .then((url) => {
+        imgEl.src = url;
+        imgEl.style.display = "block";
+        if (loadingEl) loadingEl.remove();
+      })
+      .catch(() => {
+        if (loadingEl) loadingEl.textContent = "Failed to load image.";
+      });
+  } else {
+    if (loadingEl) loadingEl.textContent = "No image available.";
   }
 
-  const recipeImages = popupContentEl.querySelectorAll(".recipe-image");
-  recipeImages.forEach((img) => {
-    img.addEventListener("click", function () {
-      const recipeId = this.getAttribute("data-recipe-id");
-      const recipe = location.recipes.find((r) => r.id === recipeId);
-      if (!recipe) return;
-      const detailsContainer = document.getElementById("recipe-details");
-      detailsContainer.innerHTML = "";
-      const craftingUI = buildCraftingUI(recipe);
-      detailsContainer.appendChild(craftingUI);
-    });
+  imgEl?.addEventListener("click", function () {
+    if (imgEl.src) openModal(imgEl.src);
   });
-
-  enableIngredientTooltips(popupContentEl, "img");
-};
-
-/**
- * Builds the crafting UI for a selected recipe.
- */
-const buildCraftingUI = (recipe) => {
-  const container = document.createElement("div");
-  container.classList.add("crafting-ui");
-
-  container.innerHTML = `
-      ${
-        recipe.requirements
-          ? `<div class="crafting-requirements">Requires: ${recipe.requirements}</div>`
-          : ""
-      }
-      <div class="crafting-header">
-        <div>
-          <div class="crafting-item-name">${recipe.display}</div>
-          <div class="crafting-time">
-            <span class="time-label">Crafting Time:</span>
-            <span class="time-value">5s</span>
-          </div>
-        </div>
-        <div class="crafting-quantity">
-          <div class="crafting-quantity-title">QUANTITY</div>
-          <div>1</div>
-        </div>
-      </div>
-      <div class="items-required-container">
-        <div class="items-required-title">ITEMS REQUIRED</div>
-        <div class="items-required"></div>
-      </div>
-  `;
-
-  container.style.border = recipe.requirements
-    ? "1px solid red"
-    : "1px solid rgb(134, 214, 36)";
-
-  const itemsRequiredEl = container.querySelector(".items-required");
-  recipe.ingredients.forEach((ingredient) => {
-    const itemEl = document.createElement("div");
-    itemEl.classList.add("item-required");
-    const ingredientImageUrl = `https://cdn.prodigyrp.net/inventory-images/${ingredient.id}.webp`;
-    itemEl.innerHTML = `
-      <img src="${ingredientImageUrl}"
-           alt="${ingredient.display}"
-           title="${ingredient.display}"
-           style="width:30px; height:30px; margin-right:5px; border:1px solid rgb(134, 214, 36); border-radius:4px;" />
-      <span class="quantity-text">0/${ingredient.amount}</span>
-    `;
-    itemsRequiredEl.appendChild(itemEl);
-  });
-
-  enableIngredientTooltips(container, ".items-required img");
-  return container;
-};
-
-/**
- * Returns the CDN image URL for a given name.
- */
-const getCDNImageUrl = (name) => {
-  const formattedName = name.toLowerCase().replace(/\s+/g, "_");
-  return `https://cdn.prodigyrp.net/inventory-images/${formattedName}.webp`;
-};
+}
 
 /**
  * Opens the image modal for an enlarged view.
  */
-const openModal = (imageSrc) => {
+function openModal(imageSrc) {
   const modal = document.getElementById("image-modal");
   const modalImg = document.getElementById("modal-image");
   modal.style.display = "block";
@@ -428,14 +278,42 @@ const openModal = (imageSrc) => {
   modal.onclick = () => {
     modal.style.display = "none";
   };
-};
+}
 
-// Create a new marker via double-click on the map
+/**
+ * Copies the given text to the clipboard.
+ */
+function copyToClipboard(text) {
+  navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      console.log("Copied to clipboard successfully!");
+    })
+    .catch((err) => {
+      console.error("Failed to copy text to clipboard:", err);
+      alert(
+        "Copying to clipboard failed. Ensure you are using HTTPS or localhost."
+      );
+    });
+}
+
+/**
+ * Generates an SVG pin icon with the given color.
+ */
+function getPinSVG(color) {
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32px" height="32px" fill="${color}" stroke="black" stroke-width="1.5">
+      <path d="M12 2C8.69 2 6 4.69 6 8c0 4.27 5.25 11.54 5.42 11.75.3.36.85.36 1.15 0C12.75 19.54 18 12.27 18 8c0-3.31-2.69-6-6-6zm0 9.5c-1.93 0-3.5-1.57-3.5-3.5S10.07 4.5 12 4.5 15.5 6.07 15.5 8 13.93 11.5 12 11.5z"/>
+    </svg>
+  `;
+}
+
+// Create a new marker via double-click on the map (unchanged utility)
 map.on("dblclick", (e) => {
   createMarkerWithPopup(e.latlng);
 });
 
-const createMarkerWithPopup = (latlng) => {
+function createMarkerWithPopup(latlng) {
   console.log("Creating marker at latlng:", latlng);
   const marker = L.marker(latlng, { draggable: true }).addTo(map);
   const popupContent = `
@@ -448,9 +326,7 @@ const createMarkerWithPopup = (latlng) => {
     </div>
   `;
   marker.bindPopup(popupContent);
-  setTimeout(() => {
-    marker.openPopup();
-  }, 50);
+  setTimeout(() => marker.openPopup(), 50);
 
   marker.on("popupopen", () => {
     setTimeout(() => {
@@ -468,9 +344,7 @@ const createMarkerWithPopup = (latlng) => {
           };
           const formattedData = JSON.stringify(markerData);
           copyToClipboard(formattedData);
-          marker
-            .bindPopup(`<p>Marker copied to clipboard!</p>`)
-            .openPopup();
+          marker.bindPopup(`<p>Marker copied to clipboard!</p>`).openPopup();
           setTimeout(() => {
             map.removeLayer(marker);
           }, 1500);
@@ -484,61 +358,7 @@ const createMarkerWithPopup = (latlng) => {
   marker.on("popupclose", () => {
     map.removeLayer(marker);
   });
-};
-
-const enableIngredientTooltips = (container, imgSelector) => {
-  const tooltipEl = document.createElement("div");
-  tooltipEl.className = "custom-tooltip";
-  document.body.appendChild(tooltipEl);
-  const images = container.querySelectorAll(imgSelector);
-  images.forEach((img) => {
-    img.addEventListener("mouseenter", (e) => {
-      const text = img.getAttribute("alt") || img.getAttribute("title") || "";
-      tooltipEl.textContent = text;
-      tooltipEl.style.display = "block";
-    });
-    img.addEventListener("mousemove", (e) => {
-      tooltipEl.style.top = e.pageY + 10 + "px";
-      tooltipEl.style.left = e.pageX + 10 + "px";
-    });
-    img.addEventListener("mouseleave", () => {
-      tooltipEl.style.display = "none";
-    });
-  });
-};
-
-/**
- * Copies the given text to the clipboard.
- */
-const copyToClipboard = (text) => {
-  navigator.clipboard
-    .writeText(text)
-    .then(() => {
-      console.log("Copied to clipboard successfully!");
-    })
-    .catch((err) => {
-      console.error("Failed to copy text to clipboard:", err);
-      alert(
-        "Copying to clipboard failed. Ensure you are using HTTPS or localhost."
-      );
-    });
-};
-
-/**
- * Generates an SVG pin icon with the given color.
- */
-const getPinSVG = (color) => {
-  return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32px" height="32px" fill="${color}" stroke="black" stroke-width="1.5">
-      <path d="M12 2C8.69 2 6 4.69 6 8c0 4.27 5.25 11.54 5.42 11.75.3.36.85.36 1.15 0C12.75 19.54 18 12.27 18 8c0-3.31-2.69-6-6-6zm0 9.5c-1.93 0-3.5-1.57-3.5-3.5S10.07 4.5 12 4.5 15.5 6.07 15.5 8 13.93 11.5 12 11.5z"/>
-    </svg>
-  `;
-};
-
-// Close bench modal
-document.getElementById("benchModalClose").onclick = () => {
-  document.getElementById("benchModal").style.display = "none";
-};
+}
 
 // Close side popup
 document
@@ -547,20 +367,18 @@ document
     document.getElementById("side-popup").style.display = "none";
   });
 
-// Close bench modal when clicking outside the modal content
+// Close image modal when clicking outside the modal content
 window.onclick = (event) => {
-  const benchModal = document.getElementById("benchModal");
-  if (event.target === benchModal) {
-    benchModal.style.display = "none";
+  const imageModal = document.getElementById("image-modal");
+  if (event.target === imageModal) {
+    imageModal.style.display = "none";
   }
 };
 
 window.addEventListener("DOMContentLoaded", () => {
-    dataSource = "categories.json";
-    loadData(dataSource);
+  dataSource = "categories.json";
+  loadData(dataSource);
 });
 
-
 // Set the initial zoom level (if needed)
-
 map.setZoom(1);
